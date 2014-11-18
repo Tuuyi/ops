@@ -1,0 +1,82 @@
+#!/usr/bin/env node
+var _ = require('lodash');
+var argv = require('minimist')(process.argv.slice(2));
+var Promise = require('bluebird');
+
+var ELB = require('../lib/elb.js');
+var EC2 = require('../lib/ec2.js');
+
+var serviceType;
+if (!(serviceType = argv.service)){ _abort("Need --service"); }
+
+// how long to wait for bleed in seconds (default is 60, should probably be pulled from ELB metadata?)
+var BLEED_WAIT = (argv.bleed || 60) * 1000;
+var IP_KEY = argv['ip-key'] || "PublicIpAddress";
+
+// load service manager
+var Service = require("../service/" + serviceType)(argv);
+// load EC2 manager
+var ec2 = new EC2(argv);
+
+module.exports = service_restart;
+function service_restart(elb, instanceId) {
+ return Promise.all([
+    // deregister from ELB
+    elb.deregister(instanceId),
+    // look up instance's IP 
+    ec2.instanceById(instanceId)
+      .then(function(inst) {
+        return inst[IP_KEY];
+      }).catch(function(msg) {
+        if (/Authentication failure./.test(msg)) {
+          console.error("Try adding --user=ec2-user");
+        }
+        throw msg;
+      })
+  // wait for service to deregister (bleed)
+  ])
+  .tap(function() {
+    console.log(instanceId, "removed from", elb.name);
+  })
+  .delay(BLEED_WAIT).spread(function(elb, instanceIP) {
+    return Promise.using(
+      // start underlying control channel (ssh)
+      new Service(instanceIP, argv.user)
+          .disposer(function(service) { service.end(); console.log("SSH Closing...") }),
+      function(service) {
+        // stop service (kill if necessary)
+        return service.stop(true)
+        // any preflight activities completed...
+        .then(service.preflight.bind(service))
+        // start service
+        .then(service.start.bind(service))
+        // wait for startup (poll interval 5 seconds, wait 120 seconds)
+        .then(service.waitForRecentStartup.bind(service, 120000))
+        // prime service (responsible for it's own waiting.)
+        .then(service.prime.bind(service));
+    }) // using
+    .then(function() {
+      return elb;
+    })
+  })  // spread
+  // return to ELB
+  .then(function(elb) {
+    return elb.register(instanceId);
+  })
+}
+
+function _abort(msg) {
+  console.error(msg);
+  process.exit(1);
+}
+
+if (!module.parent) {
+  var elbName;
+if (!(elbName = argv.elb)) { _abort("Need --elb"); }
+  if (!argv.instance) { _abort("Need --instance"); }
+
+  //  get ELB
+  ELB(argv).get(elbName).then(function(elb) {
+    service_restart(elb, argv.instance);
+  });
+}

@@ -1,0 +1,28 @@
+{
+  "name": "tuuyi-ops",
+  "version": "0.0.4",
+  "description": "Tools for managing AWS & Services",
+  "bin": {
+    "tuuyi-service-restart": "./bin/service_restart",
+    "tuuyi-service-rolling-restart": "./bin/service_rolling_restart",
+    "tuuyi-log-pack": "./tomcat/pack_logs.sh"
+  },
+  "dependencies": {
+    "aws-sdk": "~2.0.23",
+    "bluebird": "~2.3.10",
+    "lodash": "~2.4.1",
+    "minimist": "~1.1.0",
+    "request": "~2.48.0",
+    "ssh2": "~0.3.6"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type" : "git",
+    "url" : "https://github.com/Tuuyi/ops.git"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Corey Jewett <cj@syntheticplayground.com>",
+  "license": "ISC"
+}

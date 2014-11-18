@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+var _ = require('lodash');
+var argv = require('minimist')(process.argv.slice(2));
+var Promise = require('bluebird');
+
+var ELB = require('../lib/elb.js');
+var EC2 = require('../lib/ec2.js');
+var service_restart = require('./service_restart');
+
+var elbName, instanceCount;
+if (!(elbName = argv.elb)) { _abort("Need --elb"); }
+if ((instanceCount = argv.instances) === undefined) { _abort("Need --instances"); }
+
+var NEXT_WAIT = (argv.pause || 60) * 1000;
+
+//  get ELB
+ELB(argv).get(argv.elb).then(function(elb) {
+  //  check instance count.
+  if (elb.instanceIds().length != instanceCount) {
+    throw new Error("ELB Instance count does not match!");
+  }
+
+  // for each instance in service
+  Promise.each(elb.instanceIds(), function(instanceId) {
+    // restart this one.
+    return service_restart(elb, instanceId)
+    // wait for N seconds
+    .delay(NEXT_WAIT);
+  }); // each instanceIds
+})
+
+function _abort(msg) {
+  console.error(msg);
+  process.exit(1);
+}
